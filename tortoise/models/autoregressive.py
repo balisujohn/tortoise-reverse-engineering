@@ -8,7 +8,7 @@ from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions
 from transformers.utils.model_parallel_utils import get_device_map, assert_device_map
 from tortoise.models.arch_util import AttentionBlock
 from tortoise.utils.typical_sampling import TypicalLogitsWarper
-
+from torchviz import make_dot
 
 def null_position_embeddings(range, dim):
     return torch.zeros((range.shape[0], range.shape[1], dim), device=range.device)
@@ -129,24 +129,61 @@ class GPT2InferenceModel(GPT2PreTrainedModel):
             return_dict if return_dict is not None else self.config.use_return_dict
         )
 
+        print("reached internal forward")
+
+        print(input_ids)
         # Create embedding
         mel_len = self.cached_mel_emb.shape[1]
+        print(self.cached_mel_emb)
+        print(self.cached_mel_emb.shape)
+        print(mel_len)
         if input_ids.shape[1] != 1:
             text_inputs = input_ids[:, mel_len:]
+            print(input_ids)
+            print(text_inputs)
+            
             text_emb = self.embeddings(text_inputs)
+            print(text_emb)
+            print(self.text_pos_embedding.emb.weight)
+            print(self.text_pos_embedding(text_emb))
+            print(text_emb.shape)
+            print(self.text_pos_embedding(text_emb).shape)
             text_emb = text_emb + self.text_pos_embedding(text_emb)
+            print(text_emb)
+
             if self.cached_mel_emb.shape[0] != text_emb.shape[0]:
+                print("if yes")
+                print(self.cached_mel_emb)
+                print(self.cached_mel_emb.shape)
                 mel_emb = self.cached_mel_emb.repeat_interleave(
                     text_emb.shape[0] // self.cached_mel_emb.shape[0], 0
                 )
+                print(mel_emb)
             else:  # this outcome only occurs once per loop in most cases
+                print("if no")
                 mel_emb = self.cached_mel_emb
             emb = torch.cat([mel_emb, text_emb], dim=1)
+            print(emb)
+            print(emb.shape)
         else:
             emb = self.embeddings(input_ids)
             emb = emb + self.text_pos_embedding.get_fixed_embedding(
                 attention_mask.shape[1] - mel_len, attention_mask.device
             )
+
+        print(self.transformer)
+        print(past_key_values)
+        print(attention_mask)
+        print(token_type_ids)
+        print(position_ids)
+        print(head_mask)
+        print(encoder_hidden_states)
+        print(encoder_attention_mask)
+        print(use_cache)
+        print(output_attentions)
+        print(output_hidden_states)
+        print(return_dict)
+
         transformer_outputs = self.transformer(
             inputs_embeds=emb,
             past_key_values=past_key_values,
@@ -161,7 +198,9 @@ class GPT2InferenceModel(GPT2PreTrainedModel):
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
         )
+        exit()
         hidden_states = transformer_outputs[0]
+        #make_dot(hidden_states).render("test", format="png")
 
         # Set device for model parallelism
         if self.model_parallel:
@@ -172,7 +211,7 @@ class GPT2InferenceModel(GPT2PreTrainedModel):
             hidden_states = hidden_states.to(self.lm_head.weight.device)
 
         lm_logits = self.lm_head(hidden_states)
-
+        exit()
         if not return_dict:
             return (lm_logits,) + transformer_outputs[1:]
 
@@ -398,6 +437,10 @@ class UnifiedVoice(nn.Module):
     def build_aligned_inputs_and_targets(self, input, start_token, stop_token):
         inp = F.pad(input, (1,0), value=start_token)
         tar = F.pad(input, (0,1), value=stop_token)
+        #print(inp)
+        #print(tar)
+        #print("build_aligned_inputs_and_targets")
+        #exit()
         return inp, tar
 
     def set_mel_padding(self, mel_input_tokens, wav_lengths):
@@ -534,18 +577,50 @@ class UnifiedVoice(nn.Module):
         return gpt_inputs
     def inference_speech(self, speech_conditioning_latent, text_inputs, input_tokens=None, num_return_sequences=1,
                          max_generate_length=None, typical_sampling=False, typical_mass=.9, **hf_generate_kwargs):        
-
+        print(num_return_sequences)
         text_inputs = F.pad(text_inputs, (0, 1), value=self.stop_text_token)
+        print(text_inputs) # in our case, a no-op, unclear when necessary
+      
         text_inputs, _ = self.build_aligned_inputs_and_targets(text_inputs, self.start_text_token, self.stop_text_token)
+        print(text_inputs) # in our case, a no-op, unclear when necessary
+        print(text_inputs.shape)
+        print("text embedding")
+        print(self.text_embedding(text_inputs))
+        print("text embedding shape")
+        print(self.text_embedding(text_inputs).shape)
+        print("text pos embedding")
+        print(self.text_pos_embedding(text_inputs))
         text_emb = self.text_embedding(text_inputs) + self.text_pos_embedding(text_inputs)
+        print("embedding sum")
+        print(text_emb)
+
 
         conds = speech_conditioning_latent.unsqueeze(1)
+
+        
+
         emb = torch.cat([conds, text_emb], dim=1)
+        print("voice latent")
+
+        print(conds)
+        print("complete embedding")
+        print(emb)
+        print("complete embedding shape")
+        print(emb.shape)
         self.inference_model.store_mel_emb(emb)
 
         fake_inputs = torch.full((emb.shape[0], conds.shape[1] + emb.shape[1],), fill_value=1, dtype=torch.long,
                                  device=text_inputs.device)
+
+        print(fake_inputs)
+        print(fake_inputs.shape)
+        print(emb.shape)
+        print(conds.shape)
+
         fake_inputs[:, -1] = self.start_mel_token
+        print(self.start_mel_token)
+        print(fake_inputs.shape[1])
+        print(input_tokens)
         trunc_index = fake_inputs.shape[1]
         if input_tokens is None:
             inputs = fake_inputs
@@ -555,11 +630,17 @@ class UnifiedVoice(nn.Module):
             input_tokens = input_tokens.repeat(num_return_sequences // input_tokens.shape[0], 1)
             inputs = torch.cat([fake_inputs, input_tokens], dim=1)
 
+        print(inputs)
+        print(max_generate_length)
         logits_processor = LogitsProcessorList([TypicalLogitsWarper(mass=typical_mass)]) if typical_sampling else LogitsProcessorList()
         max_length = trunc_index + self.max_mel_tokens - 1  if max_generate_length is None else trunc_index + max_generate_length
+        print(max_length)
+        print(num_return_sequences)
         gen = self.inference_model.generate(inputs, bos_token_id=self.start_mel_token, pad_token_id=self.stop_mel_token, eos_token_id=self.stop_mel_token,
                                             max_length=max_length, logits_processor=logits_processor,
                                             num_return_sequences=num_return_sequences, **hf_generate_kwargs)
+        print(gen)
+        exit()
         return gen[:, trunc_index:]
 
     def get_generator(self, fake_inputs, **hf_generate_kwargs):

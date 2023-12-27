@@ -36,7 +36,10 @@ if __name__ == '__main__':
             voice_sel = selected_voice.split('&')
         else:
             voice_sel = [selected_voice]
+        print(voice_sel)
         voice_samples, conditioning_latents = load_voices(voice_sel)
+        print(voice_samples)
+        print(conditioning_latents)
 
         gen, dbg_state = tts.tts_with_preset(args.text, k=args.candidates, voice_samples=voice_samples, conditioning_latents=conditioning_latents,
                                   preset=args.preset, use_deterministic_seed=args.seed, return_deterministic_state=True, cvvp_amount=args.cvvp_amount)

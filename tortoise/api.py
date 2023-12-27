@@ -8,6 +8,7 @@ import torch
 import torch.nn.functional as F
 import progressbar
 import torchaudio
+from torchviz import make_dot
 
 from tortoise.models.classifier import AudioMiniEncoderWithClassifierHead
 from tortoise.models.diffusion_decoder import DiffusionTts
@@ -207,16 +208,26 @@ class TextToSpeech:
         self.half = half
         if os.path.exists(f'{models_dir}/autoregressive.ptt'):
             # Assume this is a traced directory.
+
+            print("the model exists")
             self.autoregressive = torch.jit.load(f'{models_dir}/autoregressive.ptt')
             self.diffusion = torch.jit.load(f'{models_dir}/diffusion_decoder.ptt')
         else:
+            print("the other case")
             self.autoregressive = UnifiedVoice(max_mel_tokens=604, max_text_tokens=402, max_conditioning_inputs=2, layers=30,
                                           model_dim=1024,
                                           heads=16, number_text_tokens=255, start_text_token=255, checkpointing=False,
                                           train_solo_embeddings=False).cpu().eval()
+
+
             self.autoregressive.load_state_dict(torch.load(get_model_path('autoregressive.pth', models_dir)), strict=False)
             self.autoregressive.post_init_gpt2_config(use_deepspeed=use_deepspeed, kv_cache=kv_cache, half=self.half)
             
+            print(self.autoregressive)
+            
+            torch.save(self.autoregressive, "./autoregressive.pt")
+
+
             self.diffusion = DiffusionTts(model_channels=1024, num_layers=10, in_channels=100, out_channels=200,
                                           in_latent_channels=1024, in_tokens=8193, dropout=0, use_fp16=False, num_heads=16,
                                           layer_drop=0, unconditioned_percentage=0).cpu().eval()
@@ -377,12 +388,26 @@ class TextToSpeech:
         deterministic_seed = self.deterministic_state(seed=use_deterministic_seed)
 
         text_tokens = torch.IntTensor(self.tokenizer.encode(text)).unsqueeze(0).to(self.device)
+        #make_dot(self.tokenizer.encode(text)).render()
+        print(text_tokens)
+
+
         text_tokens = F.pad(text_tokens, (0, 1))  # This may not be necessary.
+
+        print(text_tokens)
+
         assert text_tokens.shape[-1] < 400, 'Too much text provided. Break the text up into separate segments and re-try inference.'
         auto_conds = None
         if voice_samples is not None:
+            print("test1")
+            print(voice_samples)
             auto_conditioning, diffusion_conditioning, auto_conds, _ = self.get_conditioning_latents(voice_samples, return_mels=True)
+            print(auto_conditioning.shape)
+            print(diffusion_conditioning.shape)
+            print(auto_conds.shape)
+            print(auto_conditioning, diffusion_conditioning, auto_conds)
         elif conditioning_latents is not None:
+            print("test2")
             auto_conditioning, diffusion_conditioning = conditioning_latents
         else:
             auto_conditioning, diffusion_conditioning = self.get_random_conditioning_latents()
@@ -402,6 +427,13 @@ class TextToSpeech:
                 with self.temporary_cuda(self.autoregressive
                 ) as autoregressive, torch.autocast(device_type="cuda", dtype=torch.float16, enabled=self.half):
                     for b in tqdm(range(num_batches), disable=not verbose):
+                        print("starting autoregression")
+                        print(auto_conditioning)
+                        print(text_tokens)
+                        #SAVE POINT
+                        torch.save(auto_conditioning.to("cpu"), "auto_conditioning.pt")
+
+
                         codes = autoregressive.inference_speech(auto_conditioning, text_tokens,
                                                                     do_sample=True,
                                                                     top_p=top_p,

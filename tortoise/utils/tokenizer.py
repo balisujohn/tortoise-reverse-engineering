@@ -141,6 +141,7 @@ def transliteration_cleaners(text):
 
 def english_cleaners(text):
   '''Pipeline for English text, including number and abbreviation expansion.'''
+  print("ENGLISH CLEANERS")
   text = convert_to_ascii(text)
   text = lowercase(text)
   text = expand_numbers(text)
