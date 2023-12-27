@@ -1,3 +1,40 @@
+# This is a reverse engineering fork of tortoise-tts
+
+In order to set this up, run the following commands (tested on Ubuntu 22.04 with cuda 12.0 and a 1070ti)
+
+```
+python3.9 -m venv env
+source env/bin/activate
+python3 -m pip install -r requirements.txt
+python3 -m pip isntall torchviz
+python3 -m pip install -e . 
+
+```
+
+In order to generate the ggml-model.bin file, first run:
+
+```
+python3 tortoise/do_tts.py --text "This is a test message" --voice mol --preset fast --seed 0
+
+```
+This will cause the precursor files 
+
+`auto_conditioning.pt` and 
+`autoregressive.pt``
+
+to get generated.
+
+Then run 
+```
+python3 ./convert-pt-to-ggml.py  autoregressive.pt
+
+```
+Which will result in `ggml-model.bin` being generated. You can then move this model to examples/tortoise/ in tortoise.cpp to use 
+it with tortoise.cpp. 
+
+
+
+
 # TorToiSe
 
 Tortoise is a text-to-speech program built with the following priorities:
