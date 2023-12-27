@@ -32,7 +32,8 @@ python3 ./convert-pt-to-ggml.py  autoregressive.pt
 Which will result in `ggml-model.bin` being generated. You can then move this model to examples/tortoise/ in tortoise.cpp to use 
 it with tortoise.cpp. 
 
-
+You can find a pre-converted version of `ggml-model.bin` here https://huggingface.co/balisujohn/tortoise-ggml. Check the commit
+message to see which tortoise.cpp commit the particular model version is compatible with. 
 
 
 # TorToiSe
